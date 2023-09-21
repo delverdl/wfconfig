@@ -1,0 +1,6 @@
+﻿{
+  "ConfigSector": "0x00045000",
+  "ConfigPos": "0x0327",
+  "ConfigPort": "COM6",
+  "ConfigBaudrate": 460800
+}
