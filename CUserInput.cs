@@ -20,6 +20,8 @@ namespace wf_config
             //Present device config
             if (_devConfig != null)
             {
+                Console.WriteLine("DEVICE INFORMATION COLLECTED");
+                Console.WriteLine("----------------------------");
                 Console.WriteLine($"HOST NAME: {_devConfig.HostName}");
                 Console.WriteLine($"USE DHCP : {_devConfig.HasDhcp}");
                 if (!_devConfig.HasDhcp)
@@ -32,23 +34,42 @@ namespace wf_config
                 Console.WriteLine($"WIFI SSID: {_devConfig.Ssid}");
                 Console.WriteLine($"PASSWORD : ******"); //Password's not shown
                 Console.WriteLine($"TCP PORT : {_devConfig.Port}");
+                Console.WriteLine();
             }
         }
 
-        public bool RequestConfig()
+        private bool MakeQuestion(string question)
         {
-            Console.Write("Configure (y/n)?:");
+            Console.Write(question);
 
             var cki = Console.ReadKey();
             bool r = cki.KeyChar == 'Y' || cki.KeyChar == 'y';
 
-            Console.WriteLine("");
+            Console.WriteLine(r ? 'y' : 'n');
             return r;
         }
 
-        public string GetPassword()
+        public bool RequestConfig(bool ignore)
         {
-            var pass = string.Empty;
+            if (ignore) return true;
+            return MakeQuestion("Configure (y/n)?: ");
+        }
+
+        public bool RequestWrite(bool ignore)
+        {
+            if (ignore) return true;
+            return MakeQuestion("Write device (y/n)?: ");
+        }
+
+        public static string GetPassword()
+        {
+            return ReadLine(48, '*');
+        }
+
+        public static string ReadLine(int nChars = 0, char chPrint = '\0', bool isNumber = false, bool isIp = false, 
+            bool noSpaces = false)
+        {
+            var r = string.Empty;
             ConsoleKey key;
 
             do
@@ -56,58 +77,85 @@ namespace wf_config
                 var keyInfo = Console.ReadKey(intercept: true);
                 key = keyInfo.Key;
 
-                if (key == ConsoleKey.Backspace && pass.Length > 0)
+                if (key == ConsoleKey.Backspace && r.Length > 0) //Write backspace to console an into result
                 {
                     Console.Write("\b \b");
-                    pass = pass[0..^1];
+                    r = r[0..^1];
                 }
                 else if (!char.IsControl(keyInfo.KeyChar))
-                {
-                    Console.Write("*");
-                    pass += keyInfo.KeyChar;
+                {   //Validate input
+                    if (    
+                            (nChars > 0 && r.Length >= nChars)           || //Verify length if enabled
+                            (isNumber && !char.IsDigit(keyInfo.KeyChar)) || //If number, then must be digits
+                            (isIp && 
+                                (
+                                    !char.IsDigit(keyInfo.KeyChar)       || //If IP must have digits
+                                    (keyInfo.KeyChar != '.')             || //...must have '.'
+                                    (keyInfo.KeyChar == '.'              && //...Or if it's '.'
+                                        (r.Count(c => c == '.') > 2      || //...must not have more than 3 '.'
+                                            (string.IsNullOrEmpty(r)     &&
+                                            r.Last() == '.')                //...and must not have 2 consecutive '.' 
+                                        )
+                                    )                                    ||
+                                    r.Length >= 15                          //...must not have more than 15 chars
+                                )
+                            )                                            ||
+                            (noSpaces && char.IsWhiteSpace(keyInfo.KeyChar))
+                        )
+                        continue;
+                    //Print input
+                    if (chPrint != 0) Console.Write(chPrint);
+                    else Console.Write(keyInfo.KeyChar);
+                    r += keyInfo.KeyChar;
                 }
             } while (key != ConsoleKey.Enter);
-            return pass;
+            Console.WriteLine();
+            return r;
         }
 
         public void GatherConfig()
         {
             if (_devConfig == null) return;
 
-            Console.WriteLine("");
+            Console.WriteLine();
             //Proceed with configuration
             Console.Write("SSID     : ");
-            _devConfig.Ssid = Console.ReadLine();
+            _devConfig.Ssid = ReadLine(63);
             Console.Write("PASSWORD : ");
             _devConfig.Password = GetPassword();
             Console.Write("HOST NAME: ");
-            _devConfig.HostName = Console.ReadLine();
-            Console.Write("DHCP(y/n): ");
-            _devConfig.HasDhcp = Console.ReadLine()?.ToLower() == "y";
+            _devConfig.HostName = ReadLine(15, noSpaces: true);
+            _devConfig.HasDhcp = MakeQuestion("DHCP(y/n): ");
             if (!_devConfig.HasDhcp)
             {
                 Console.Write("  IP     : ");
-                _devConfig.Ip = Console.ReadLine();
+                _devConfig.Ip = ReadLine(isIp: true);
                 Console.Write("  MASK   : ");
-                _devConfig.SubNet = Console.ReadLine();
+                _devConfig.SubNet = ReadLine(isIp: true);
                 Console.Write("  GATEWAY: ");
-                _devConfig.Gateway = Console.ReadLine();
+                _devConfig.Gateway = ReadLine(isIp: true);
             }
             Console.Write("BAUDRATE : ");
-            _devConfig.BaudRate = Console.ReadLine();
+            _devConfig.BaudRate = ReadLine(7, isNumber: true);
             Console.Write("TCP PORT : ");
-            _devConfig.Port = Console.ReadLine();
+            _devConfig.Port = ReadLine(5, isNumber: true);
+            Console.WriteLine();
         }
 
         private CUserInput() 
         {
-            CConfig? _cfg = CConfig.Instance();
+            _cfg = CConfig.Instance();
 
             if (_cfg != null)
                 _devConfig = _cfg.ReadFromDevice();
         }
 
         private static CWiFiCfg? _devConfig;
+        private static CConfig? _cfg;
+
+        public static CWiFiCfg? DevConfig => _devConfig;
+        public static CConfig? Configuration => _cfg;
+
         private static CUserInput? _cui;
     }
 }

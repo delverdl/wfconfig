@@ -2,11 +2,38 @@
 using Newtonsoft.Json;
 using System.Diagnostics;
 using System.Text;
+using System.Text.RegularExpressions;
 
 namespace wf_config
 {
     public class CWiFiCfg
     {
+        private void StructureAssign(CWiFiCfg other)
+        {
+            _ssid = other.Ssid;
+            _password = other.Password;
+            HasDhcp = other.HasDhcp;
+            _ip = other.Ip;
+            _gateway = other.Gateway;
+            _subnet = other.SubNet;
+            _hostName = other.HostName;
+            _baudRate = other.BaudRate;
+            _port = other.Port;
+        }
+
+        private void StructureAssign(byte[] data)
+        {
+            _ssid = Encoding.UTF8.GetString(data, 8, 64);
+            _password = Encoding.UTF8.GetString(data, 72, 64);
+            HasDhcp = data[136] == 1;
+            _ip = Encoding.UTF8.GetString(data, 137, 16);
+            _gateway = Encoding.UTF8.GetString(data, 153, 16);
+            _subnet = Encoding.UTF8.GetString(data, 169, 16);
+            _hostName = Encoding.UTF8.GetString(data, 185, 16);
+            _baudRate = Encoding.UTF8.GetString(data, 201, 8);
+            _port = Encoding.UTF8.GetString(data, 209, 6);
+        }
+
         public CWiFiCfg() 
         {
             DefaultInit();
@@ -16,14 +43,14 @@ namespace wf_config
         {
             DefaultInit();
             if (data == null || data.Length < 256) return;
-            this.StructureAssign(data);
+            StructureAssign(data);
         }
 
         public CWiFiCfg(CWiFiCfg? cfg)
         {
             DefaultInit();
             if (cfg != null)
-                this.StructureAssign(cfg);
+                StructureAssign(cfg);
         }
 
         public byte[] ToByteArray()
@@ -36,7 +63,12 @@ namespace wf_config
             bytes[136] = (byte)(HasDhcp ? 1 : 0);
             Encoding.UTF8.GetBytes(_ip ?? string.Empty).CopyTo(bytes, 137);
             Encoding.UTF8.GetBytes(_gateway ?? string.Empty).CopyTo(bytes, 153);
-            Encoding.UTF8.GetBytes(_initTag ?? string.Empty).CopyTo(bytes, 0);
+            Encoding.UTF8.GetBytes(_subnet ?? string.Empty).CopyTo(bytes, 169);
+            Encoding.UTF8.GetBytes(_hostName ?? string.Empty).CopyTo(bytes, 185);
+            Encoding.UTF8.GetBytes(_baudRate ?? string.Empty).CopyTo(bytes, 201);
+            Encoding.UTF8.GetBytes(_port ?? string.Empty).CopyTo(bytes, 209);
+            Encoding.UTF8.GetBytes(_padding ?? string.Empty).CopyTo(bytes, 215);
+            Encoding.UTF8.GetBytes(_endTag ?? string.Empty).CopyTo(bytes, 248);
             return bytes;
         }
 
@@ -95,7 +127,7 @@ namespace wf_config
             _hostName = 16.Zeroed();
             _baudRate = 8.Zeroed();
             _port = 6.Zeroed();
-            _padding = new string('\xD1', 33);
+            _padding = new string('\x2e', 33);
             _endTag = "DxWiFiE\x00";
         }
 
@@ -112,34 +144,6 @@ namespace wf_config
 
     public static class Extensions
     {
-        public static CWiFiCfg StructureAssign(this CWiFiCfg cfg, CWiFiCfg other)
-        {
-            cfg.Ssid    = other.Ssid;
-            cfg.Password= other.Password;
-            cfg.HasDhcp = other.HasDhcp;
-            cfg.Ip      = other.Ip;
-            cfg.Gateway = other.Gateway;
-            cfg.SubNet  = other.SubNet;
-            cfg.HostName= other.HostName;
-            cfg.BaudRate= other.BaudRate;
-            cfg.Port    = other.Port;
-            return cfg;
-        }
-
-        public static CWiFiCfg StructureAssign(this CWiFiCfg cfg, byte[] data)
-        {
-            cfg.Ssid = Encoding.UTF8.GetString(data, 8, 64);
-            cfg.Password = Encoding.UTF8.GetString(data, 72, 64);
-            cfg.HasDhcp = data[136] == 1;
-            cfg.Ip = Encoding.UTF8.GetString(data, 137, 16);
-            cfg.Gateway = Encoding.UTF8.GetString(data, 153, 16);
-            cfg.SubNet = Encoding.UTF8.GetString(data, 169, 16);
-            cfg.HostName = Encoding.UTF8.GetString(data, 185, 16);
-            cfg.BaudRate = Encoding.UTF8.GetString(data, 201, 8);
-            cfg.Port = Encoding.UTF8.GetString(data, 209, 6);
-            return cfg;
-        }
-
         public static string Zeroed(this int length)
         {
             return new string('\x00', length);
@@ -152,7 +156,7 @@ namespace wf_config
         public static CConfig? Instance()
         {
             if (_config == null)
-                _config = JsonConvert.DeserializeObject<CConfig>("wpcfg.json");
+                _config = JsonConvert.DeserializeObject<CConfig>(File.ReadAllText("wpcfg.json"));
             return _config;
         }
 
@@ -172,18 +176,35 @@ namespace wf_config
         private StreamWriter? _streamError;
         private bool _errorsWritten;
 
-        public void RunEspTool(bool showProgress, bool readFlash = true)
+        public enum ESPAction
         {
-            Process process = new();
+            read_flash,
+            write_flash,
+            erase_region
+        }
 
+        public void RunEspTool(bool showProgress, ESPAction action = ESPAction.read_flash)
+        {
+            const int sectorCount = 0x1000;
+            Process process = new();
+            string sAct = action.ToString() + " ";
+
+            if (action == ESPAction.erase_region)
+                sAct = "--after no_reset " + sAct;
             process.StartInfo.FileName = "./python/python";
             process.StartInfo.CreateNoWindow = true;
             process.StartInfo.UseShellExecute = false;
             process.StartInfo.RedirectStandardOutput = showProgress;
             process.StartInfo.RedirectStandardError = true;
             process.StartInfo.Arguments =
-                $"./esptool/esptool.py -p {ConfigPort} -b {ConfigBaudrate} " +
-                $"read_flash 0x{ConfigSector:X} 0x1000 ctx_data.bin";
+                $"./esptool/esptool.py -p {ConfigPort} -b {ConfigBaudrate} " + sAct +
+                $"0x{ConfigSector:X}";
+
+            if (action != ESPAction.write_flash) //Read or erase size
+                process.StartInfo.Arguments += $" 0x{sectorCount:X}";
+
+            if (action < ESPAction.erase_region) //File to read or write
+                process.StartInfo.Arguments += " ctx_data.bin";
 
             if (OperatingSystem.IsWindows())
             {
@@ -202,7 +223,7 @@ namespace wf_config
                 process.BeginErrorReadLine();
                 process.WaitForExit();
                 if (process.ExitCode != 0)
-                    throw new InvalidProgramException($"Application exited with code {process.ExitCode}");
+                    throw new InvalidProgramException($"ESPTOOL application exited with error code {process.ExitCode}");
             }
             else throw new FileLoadException("Unknown error loading ESPTOOL!");
         }
@@ -211,43 +232,59 @@ namespace wf_config
             DataReceivedEventArgs outLine)
         {
             if (!string.IsNullOrEmpty(outLine.Data))
-                Console.Write(outLine.Data);
+            {
+                var sav = Console.ForegroundColor;
+
+                Console.ForegroundColor = ConsoleColor.Yellow;
+                Console.WriteLine(outLine.Data);
+                Console.ForegroundColor = sav;
+            }
         }
 
         private void Process_ErrorDataReceived(object sender, DataReceivedEventArgs outLine)
         {
+            if (!string.IsNullOrEmpty(outLine.Data))
             {
-                if (!string.IsNullOrEmpty(outLine.Data))
+                var sav = Console.ForegroundColor;
+
+                Console.ForegroundColor = ConsoleColor.Red;
+                if (!_errorsWritten)
                 {
-                    if (!_errorsWritten)
+                    if (_streamError == null)
                     {
-                        if (_streamError == null)
+                        try
                         {
-                            try
-                            {
-                                _streamError = new("errors.log", true);
-                            }
-                            catch (Exception e)
-                            {
-                                Console.WriteLine("ERROR: Could not open errors log file!");
-                                Console.WriteLine(e.Message.ToString());
-                            }
+                            _streamError = new("errors.log", true);
                         }
-                        _streamError?.WriteLine($"[{DateTime.Now:yyyy/MM/dd HH:mm:ss}]");
-                        _errorsWritten = true;
+                        catch (Exception e)
+                        {
+
+                            Console.WriteLine("ERROR: Could not open errors log file!");
+                            Console.WriteLine(e.Message.ToString());
+                        }
                     }
-                    //Write log
-                    _streamError?.WriteLine(outLine.Data);
-                    _streamError?.Flush();
+                    _streamError?.WriteLine($"[{DateTime.Now:yyyy/MM/dd HH:mm:ss}]");
+                    _errorsWritten = true;
                 }
-            };
+                //Write log
+                _streamError?.WriteLine(outLine.Data);
+                _streamError?.Flush();
+                if (Regex.IsMatch(outLine.Data, @"Exception.?:\s+"))
+                    Console.WriteLine(outLine.Data);
+                Console.ForegroundColor = sav;
+            }
+            
         }
 
         public CWiFiCfg? ReadFromDevice(bool refresh = false)
         {
             if (refresh || _wifiCfg == null)
             {
+                if (File.Exists("ctx_data.bin")) File.Delete("ctx_data.bin");
+                
+                //Connect device through USB to read its flash memory
                 RunEspTool(true);
+
                 using (FileStream fs = new("ctx_data.bin", FileMode.Open))
                 {
                     fs.Seek(ConfigPos ?? 0, SeekOrigin.Begin);
@@ -257,10 +294,66 @@ namespace wf_config
                     fs.Read(b, 0, b.Length);
                     if (Encoding.UTF8.GetString(b).StartsWith("DxWiFiS"))
                         _wifiCfg = new(b);
-
+                    else
+                        throw new InvalidDataException("Data sector read from device doesn't contain the configuration " +
+                            "array. Verify that 'ctx_data.bin' contains the string 'DxWiFiS' and its byte offset must be " +
+                            "properly configured in 'wpcfg.json' file (ConfigPos value).");
                 }
             }
             return _wifiCfg;
+        }
+
+        private bool ContentsMatch(string f1, string f2)
+        {
+            if ((new FileInfo(f1)).Length != (new FileInfo(f2)).Length)
+                return false;
+
+            byte[] fs1 = File.ReadAllBytes(f1), fs2 = File.ReadAllBytes(f2);
+
+            for (int i = 0; i < fs1.Length && i < fs2.Length; i++)
+                if (fs1[i] != fs2[i]) return false;
+            return true;
+        }
+
+        public void WriteToDevice()
+        {
+            byte nBk = 0;
+            string bkName = string.Empty;
+
+            Console.WriteLine("Writing config to disk...");
+
+            //Back up data
+            do
+            {
+                if (!string.IsNullOrEmpty(bkName) && ContentsMatch("ctx_data.bin", bkName))
+                {
+                    File.Delete(bkName); //Asure saving to an existing backup with equal contents
+                    break;
+                }
+                bkName = $"ctx_data.bin.{nBk:X2}";
+                nBk++;
+            }
+            while (File.Exists(bkName));
+            File.Copy("ctx_data.bin", bkName);
+            using (FileStream fs = new("ctx_data.bin", FileMode.Open))
+            {
+                fs.Seek(ConfigPos ?? 0, SeekOrigin.Begin);
+                fs.Write(_wifiCfg?.ToByteArray());
+            }
+            
+            Thread.Sleep(250); //Wait a little bit
+
+            Console.WriteLine("Erasing ESP device flash config region...");
+            Console.WriteLine();
+            RunEspTool(true, ESPAction.erase_region);
+
+            Console.WriteLine("Writing ESP flash config...");
+            Console.WriteLine();
+            RunEspTool(true, ESPAction.write_flash);
+
+            Console.WriteLine();
+            Console.WriteLine("Done");
+            Console.WriteLine("Connect to serial port to verify device!");
         }
 
     }
