@@ -72,7 +72,7 @@ static void Process(CmdOptions options)
                 if (!string.IsNullOrEmpty(options.Ssid))
                     wifiCfg.Ssid = options.Ssid;
                 else
-                    throw new ArgumentException("Must have an SSID to connect to!");
+                    throw new ArgumentException("You must have an SSID to connect to!");
             }
         }
         else
@@ -122,10 +122,10 @@ internal class CmdOptions
     public string? Gateway { get; set; }
 
     [Option('b', "baud-rate", Default = "19200", HelpText = "Serial baud rate. Other params are: 8N1 and " +
-        "hardware control off.", SetName = "config")]
+        "hardware control off and they aren't configurable.", SetName = "config")]
     public string? Baudrate { get; set; }
 
     [Option('p', "port", Default = "32594", HelpText = "TCP port for device's created server socket. LAN/WAN " +
-        "clients should connect to this port and the manual or DHCP provided IP address.", SetName = "config")]
+        "clients should connect using device's IP address.", SetName = "config")]
     public string? Port { get; set; }
 }
