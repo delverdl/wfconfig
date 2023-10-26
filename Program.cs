@@ -27,64 +27,67 @@ static void Process(CmdOptions options)
     CConfig? cfg = CUserInput.Configuration;
 
     ui.ShowInfo();
-    if (options.YesAll)
+    if (!options.InfoOnly)
     {
-        if (wifiCfg != null)
+        if (options.YesAll)
         {
-            if (!string.IsNullOrEmpty(options.Baudrate) && int.TryParse(options.Baudrate, out _))
-                wifiCfg.BaudRate = options.Baudrate;
-            else
-                wifiCfg.BaudRate = "19200";
-            if (!string.IsNullOrEmpty(options.Port) && ushort.TryParse(options.Port, out _))
-                wifiCfg.Port = options.Port;
-            else
-                wifiCfg.Port = "32594";
-            if (string.IsNullOrEmpty(options.Password))
+            if (wifiCfg != null)
             {
-                Console.Write("PASSWORD : ");
-                wifiCfg.Password = CUserInput.GetPassword();
-            }
-            else 
-                wifiCfg.Password = options.Password;
-            wifiCfg.HasDhcp = string.IsNullOrEmpty(options.IpAddress);
-            if (!wifiCfg.HasDhcp)
-            {
-                if (IPAddress.TryParse(options.IpAddress, out _))
-                    wifiCfg.Ip = options.IpAddress;
+                if (!string.IsNullOrEmpty(options.Baudrate) && int.TryParse(options.Baudrate, out _))
+                    wifiCfg.BaudRate = options.Baudrate;
                 else
-                    throw new ArgumentException("Invalid IP address entered!");
-                wifiCfg.SubNet = string.IsNullOrEmpty(options.Mask) ? "255.255.255.0" : 
-                    IPAddress.Parse(options.Mask).ToString();
-                wifiCfg.Gateway = string.IsNullOrEmpty(options.Gateway) ? "0.0.0.0" : 
-                    IPAddress.Parse(options.Gateway).ToString();
+                    wifiCfg.BaudRate = "19200";
+                if (!string.IsNullOrEmpty(options.Port) && ushort.TryParse(options.Port, out _))
+                    wifiCfg.Port = options.Port;
+                else
+                    wifiCfg.Port = "32594";
+                if (string.IsNullOrEmpty(options.Password))
+                {
+                    Console.Write("PASSWORD : ");
+                    wifiCfg.Password = CUserInput.GetPassword();
+                }
+                else
+                    wifiCfg.Password = options.Password;
+                wifiCfg.HasDhcp = string.IsNullOrEmpty(options.IpAddress);
+                if (!wifiCfg.HasDhcp)
+                {
+                    if (IPAddress.TryParse(options.IpAddress, out _))
+                        wifiCfg.Ip = options.IpAddress;
+                    else
+                        throw new ArgumentException("Invalid IP address entered!");
+                    wifiCfg.SubNet = string.IsNullOrEmpty(options.Mask) ? "255.255.255.0" :
+                        IPAddress.Parse(options.Mask).ToString();
+                    wifiCfg.Gateway = string.IsNullOrEmpty(options.Gateway) ? "0.0.0.0" :
+                        IPAddress.Parse(options.Gateway).ToString();
+                }
+                if (!string.IsNullOrEmpty(options.HostName))
+                {
+                    if (options.HostName.Length > 15 || options.HostName.Any(a => char.IsWhiteSpace(a)))
+                        throw new ArgumentException("Invalid hostname provided: it must be 15 chars max and " +
+                            "shouldn't contain spaces!");
+                    wifiCfg.HostName = options.HostName;
+                }
+                else
+                    wifiCfg.HostName = $"PX{DateTime.Now:yyMMddHHmmss}";
+                if (!string.IsNullOrEmpty(options.Ssid))
+                    wifiCfg.Ssid = options.Ssid;
+                else
+                    throw new ArgumentException("Must have an SSID to connect to!");
             }
-            if (!string.IsNullOrEmpty(options.HostName))
-            {
-                if (options.HostName.Length > 15 || options.HostName.Any(a => char.IsWhiteSpace(a)))
-                    throw new ArgumentException("Invalid hostname provided: it must be 15 chars max and " +
-                        "shouldn't contain spaces!");
-                wifiCfg.HostName = options.HostName;
-            }
-            else
-                wifiCfg.HostName = $"PX{DateTime.Now:yyMMddHHmmss}";
-            if (!string.IsNullOrEmpty(options.Ssid))
-                wifiCfg.Ssid = options.Ssid;
-            else
-                throw new ArgumentException("Must have an SSID to connect to!");
-        }
-    }
-    else 
-    {
-        if (ui.RequestConfig(false))
-        {
-            ui.GatherConfig();
-            if (!ui.RequestWrite(false))
-                return;
         }
         else
-            return;
+        {
+            if (ui.RequestConfig(false))
+            {
+                ui.GatherConfig();
+                if (!ui.RequestWrite(false))
+                    return;
+            }
+            else
+                return;
+        }
+        cfg?.WriteToDevice();
     }
-    cfg?.WriteToDevice();
 }
 
 //Classes

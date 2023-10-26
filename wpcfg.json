@@ -1,6 +1,6 @@
 ﻿{
-  "ConfigSector": 282624,
-  "ConfigPos": 823,
+  "ConfigBaudrate": 460800,
   "ConfigPort": "COM4",
-  "ConfigBaudrate": 460800
+  "ConfigPos": 832,
+  "ConfigSector": 282624
 }

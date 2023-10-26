@@ -2,7 +2,7 @@
   "profiles": {
     "wfconfig": {
       "commandName": "Project",
-      "commandLineArgs": "-y -s PQUY-WORK -p PQ*wifi22"
+      "commandLineArgs": "-f"
     }
   }
 }

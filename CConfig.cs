@@ -8,6 +8,8 @@ namespace wf_config
 {
     public class CWiFiCfg
     {
+        public static readonly string BlockStart = "DxWiFiS";
+
         private void StructureAssign(CWiFiCfg other)
         {
             _ssid = other.Ssid;
@@ -117,7 +119,7 @@ namespace wf_config
 
         private void DefaultInit()
         {
-            _initTag = "DxWiFiS\x00";
+            _initTag = $"{BlockStart}\x00";
             _ssid = 64.Zeroed();
             _password = 64.Zeroed();
             HasDhcp = true;
@@ -153,10 +155,12 @@ namespace wf_config
 
     internal class CConfig
     {
+        private const string _fileName = "wpcfg.json";
+
         public static CConfig? Instance()
         {
             if (_config == null)
-                _config = JsonConvert.DeserializeObject<CConfig>(File.ReadAllText("wpcfg.json"));
+                _config = JsonConvert.DeserializeObject<CConfig>(File.ReadAllText(_fileName));
             return _config;
         }
 
@@ -181,6 +185,20 @@ namespace wf_config
             read_flash,
             write_flash,
             erase_region
+        }
+
+        public void Save()
+        {
+            string sOut = JsonConvert.SerializeObject(this, Formatting.Indented);
+            const string sNew = _fileName + ".old";
+
+            if (File.Exists(_fileName))
+            {
+                if (File.Exists(sNew))
+                    File.Delete(sNew); //Remove old backup
+                File.Move(_fileName, sNew); //Rename current config
+            }
+            File.WriteAllText(_fileName, sOut); //Write update config
         }
 
         public void RunEspTool(bool showProgress, ESPAction action = ESPAction.read_flash)
@@ -226,6 +244,7 @@ namespace wf_config
                     throw new InvalidProgramException($"ESPTOOL application exited with error code {process.ExitCode}");
             }
             else throw new FileLoadException("Unknown error loading ESPTOOL!");
+            Console.WriteLine();
         }
 
         private void Process_OutputDataReceived(object sender, 
@@ -276,6 +295,13 @@ namespace wf_config
             
         }
 
+        private void ShowDataException()
+        {
+            throw new InvalidDataException("Data sector read from device doesn't contain the configuration " +
+                            $"array. Verify that 'ctx_data.bin' contains the string '{CWiFiCfg.BlockStart}' and its byte offset must be " +
+                            "properly configured in 'wpcfg.json' file (ConfigPos value).");
+        }
+
         public CWiFiCfg? ReadFromDevice(bool refresh = false)
         {
             if (refresh || _wifiCfg == null)
@@ -292,15 +318,24 @@ namespace wf_config
                     byte[] b = new byte[256];
 
                     fs.Read(b, 0, b.Length);
-                    if (Encoding.UTF8.GetString(b).StartsWith("DxWiFiS"))
+                    if (Encoding.ASCII.GetString(b).StartsWith(CWiFiCfg.BlockStart))
                         _wifiCfg = new(b);
                     else
-                        throw new InvalidDataException("Data sector read from device doesn't contain the configuration " +
-                            "array. Verify that 'ctx_data.bin' contains the string 'DxWiFiS' and its byte offset must be " +
-                            "properly configured in 'wpcfg.json' file (ConfigPos value).");
+                        ShowDataException();
                 }
             }
             return _wifiCfg;
+        }
+
+        public long GetActualConfigPos()
+        {
+            if (!File.Exists("ctx_data.bin"))
+                RunEspTool(true);
+
+            byte[] b = File.ReadAllBytes("ctx_data.bin");
+            string sData = Encoding.ASCII.GetString(b);
+                        
+            return sData.IndexOf(CWiFiCfg.BlockStart);
         }
 
         private bool ContentsMatch(string f1, string f2)
@@ -343,10 +378,12 @@ namespace wf_config
             
             Thread.Sleep(250); //Wait a little bit
 
+            Console.WriteLine();
             Console.WriteLine("Erasing ESP device flash config region...");
             Console.WriteLine();
             RunEspTool(true, ESPAction.erase_region);
 
+            Console.WriteLine();
             Console.WriteLine("Writing ESP flash config...");
             Console.WriteLine();
             RunEspTool(true, ESPAction.write_flash);

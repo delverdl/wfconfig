@@ -20,6 +20,7 @@ namespace wf_config
             //Present device config
             if (_devConfig != null)
             {
+                Console.WriteLine();
                 Console.WriteLine("DEVICE INFORMATION COLLECTED");
                 Console.WriteLine("----------------------------");
                 Console.WriteLine($"HOST NAME: {_devConfig.HostName}");
@@ -45,7 +46,7 @@ namespace wf_config
             var cki = Console.ReadKey();
             bool r = cki.KeyChar == 'Y' || cki.KeyChar == 'y';
 
-            Console.WriteLine(r ? 'y' : 'n');
+            Console.WriteLine();
             return r;
         }
 
@@ -146,8 +147,38 @@ namespace wf_config
         {
             _cfg = CConfig.Instance();
 
-            if (_cfg != null)
-                _devConfig = _cfg.ReadFromDevice();
+            bool canChange = false;
+            long idx;
+
+            while (_cfg != null)
+            {
+                try
+                {
+                    _devConfig = _cfg.ReadFromDevice();
+                    canChange = false;
+                }
+                catch (Exception ex) when(ex.Message.Contains(CWiFiCfg.BlockStart))
+                {   //Other exception will terminate application
+                    if (canChange) 
+                    {   //Error was not fixed due to invalid ESP8266 flash data
+                        Console.WriteLine(ex);
+                        Environment.Exit(-1);
+                        return;
+                    }
+                    canChange = true; //Enable changing ConfigPos
+                }
+                if (canChange)
+                {
+                    idx = _cfg.GetActualConfigPos();
+                    if (idx > 0 && idx != _cfg.ConfigPos)
+                    {
+                        _cfg.ConfigPos = idx;
+                        _cfg.Save();
+                    }
+                }
+                else
+                    break;
+            }
         }
 
         private static CWiFiCfg? _devConfig;
